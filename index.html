@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Máquina de Escribir 3D Neón (Manilla Interactiva)</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #000000;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            font-family: 'Courier New', Courier, monospace;
+            cursor: default;
+        }
+
+        /* Botón de Inicio Centrado */
+        #btn-inicio {
+            padding: 18px 45px;
+            font-size: 1.6rem;
+            color: #ffffff;
+            background: transparent;
+            border: 2px solid #ffaa00;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 25px rgba(255, 170, 0, 0.4);
+            z-index: 10;
+        }
+
+        #btn-inicio:hover {
+            background-color: #ffaa00;
+            color: #000000;
+            box-shadow: 0 0 35px rgba(255, 170, 0, 0.9);
+            transform: scale(1.08);
+        }
+
+        /* Controles Flotantes Superior Derecha */
+        .controles {
+            display: none;
+            position: fixed;
+            top: 25px;
+            right: 25px;
+            gap: 12px;
+            z-index: 20;
+        }
+
+        .btn-control {
+            padding: 10px 22px;
+            font-size: 0.95rem;
+            color: #ffffff;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid rgba(255, 170, 0, 0.5);
+            border-radius: 30px;
+            backdrop-filter: blur(5px);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-control:hover {
+            background: #ffaa00;
+            color: #000000;
+            transform: scale(1.05);
+            box-shadow: 0 0 15px rgba(255, 170, 0, 0.6);
+        }
+
+        #btn-salir:hover {
+            background: rgba(255, 0, 85, 0.9);
+            border-color: #ff0055;
+            color: #ffffff;
+            box-shadow: 0 0 15px rgba(255, 0, 85, 0.8);
+        }
+
+        /* Contenedor del Lienzo */
+        #canvas-container {
+            display: none;
+            position: absolute;
+            width: 100%;
+            height: 100%;
+        }
+
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- CAMBIA AQUÍ LA RUTA A TU ARCHIVO DE AUDIO -->
+    <audio id="miMusica" src="musica41.mp3" preload="auto" loop></audio>
+
+    <!-- Botón de Inicio -->
+    <button id="btn-inicio">Inicio</button>
+
+    <!-- Controles flotantes -->
+    <div class="controles" id="panel-controles">
+        <button class="btn-control" id="btn-audio">🔊 Sonido: ON</button>
+        <button class="btn-control" id="btn-salir">Salir</button>
+    </div>
+
+    <!-- Contenedor del lienzo -->
+    <div id="canvas-container">
+        <canvas id="typewriterCanvas"></canvas>
+    </div>
+
+    <script>
+        const btnInicio = document.getElementById('btn-inicio');
+        const btnSalir = document.getElementById('btn-salir');
+        const btnAudio = document.getElementById('btn-audio');
+        const panelControles = document.getElementById('panel-controles');
+        const canvasContainer = document.getElementById('canvas-container');
+        const canvas = document.getElementById('typewriterCanvas');
+        const ctx = canvas.getContext('2d');
+        const audioElement = document.getElementById('miMusica');
+
+        let animacionId = null;
+        let activo = false;
+        let tiempoInicio = 0;
+
+        // Frases motivacionales rotativas
+        const MENSAJE_INICIAL = "¡ HOLA  QUE TENGAS UN BUEN DÍA !";
+        const CITAS_POSITIVAS = [
+            "CADA DÍA ES UNA NUEVA OPORTUNIDAD PARA BRILLAR.",
+            "LA ENERGÍA QUE TRANSMITES ES LA QUE RECIBES.",
+            "HAZ DE HOY UN DÍA INOLVIDABLE.",
+            "TU ÚNICO LÍMITE ES TU PROPIA IMAGINACIÓN."
+        ];
+
+        let citaIndex = 0;
+        let textoActualObjetivo = MENSAJE_INICIAL;
+        let charIndex = 0;
+
+        // Máquina de estados
+        let estado = 'ESPERA_INICIAL';
+        let tiempoEstado = 0;
+
+        // Teclado mecánico simulado
+        const LAYOUT_TECLAS = [
+            ["Q","W","E","R","T","Y","U","I","O","P"],
+            ["A","S","D","F","G","H","J","K","L"],
+            ["Z","X","C","V","B","N","M"]
+        ];
+
+        let teclaPulsada = null;
+        let barraEspaciadoraPulsada = false;
+
+        // Hoja de papel y ángulo de la manilla
+        let papelYOffset = 0;
+        let manillaAngulo = 0; // Ángulo de rotación de la palanca al expulsar y cargar hoja
+        let lineaActualTexto = "";
+
+        function ajustarCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        window.addEventListener('resize', () => {
+            if (activo) ajustarCanvas();
+        });
+
+        btnAudio.addEventListener('click', (e) => {
+            e.stopPropagation();
+            audioElement.muted = !audioElement.muted;
+            btnAudio.textContent = audioElement.muted ? "🔇 Sonido: OFF" : "🔊 Sonido: ON";
+        });
+
+        btnInicio.addEventListener('click', () => {
+            btnInicio.style.display = 'none';
+            panelControles.style.display = 'flex';
+            canvasContainer.style.display = 'block';
+
+            ajustarCanvas();
+            reiniciarAnimacion();
+            activo = true;
+
+            audioElement.currentTime = 0;
+            audioElement.muted = false;
+            btnAudio.textContent = "🔊 Sonido: ON";
+            audioElement.play().catch(err => console.log(err));
+
+            iniciarAnimacion();
+        });
+
+        btnSalir.addEventListener('click', (e) => {
+            e.stopPropagation();
+            activo = false;
+            if (animacionId) cancelAnimationFrame(animacionId);
+
+            audioElement.pause();
+            audioElement.currentTime = 0;
+
+            canvasContainer.style.display = 'none';
+            panelControles.style.display = 'none';
+            btnInicio.style.display = 'block';
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        });
+
+        function reiniciarAnimacion() {
+            tiempoInicio = Date.now();
+            estado = 'ESPERA_INICIAL';
+            tiempoEstado = Date.now();
+            textoActualObjetivo = MENSAJE_INICIAL;
+            charIndex = 0;
+            citaIndex = 0;
+            papelYOffset = 0;
+            manillaAngulo = 0;
+            lineaActualTexto = "";
+            teclaPulsada = null;
+            barraEspaciadoraPulsada = false;
+        }
+
+        function formatearTextoEnLineas(texto, maxChars = 22) {
+            const palabras = texto.split(' ');
+            const result = [];
+            let currentLine = "";
+
+            palabras.forEach(palabra => {
+                if ((currentLine + palabra).length <= maxChars) {
+                    currentLine += (currentLine === "" ? "" : " ") + palabra;
+                } else {
+                    result.push(currentLine);
+                    currentLine = palabra;
+                }
+            });
+            if (currentLine) result.push(currentLine);
+            return result;
+        }
+
+        function iniciarAnimacion() {
+            if (!activo) return;
+
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const ahora = Date.now();
+            const tSeg = (ahora - tiempoEstado) * 0.001;
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2 + 30;
+
+            // MÁQUINA DE ESTADOS LÓGICA CON ANIMACIÓN DE MANILLA
+            if (estado === 'ESPERA_INICIAL') {
+                manillaAngulo = 0; // Posición estática
+                if (tSeg >= 3.0) {
+                    estado = 'ESCRIBIENDO';
+                    tiempoEstado = ahora;
+                    charIndex = 0;
+                }
+            } 
+            else if (estado === 'ESCRIBIENDO') {
+                manillaAngulo = 0;
+                if (tSeg >= 0.12) {
+                    tiempoEstado = ahora;
+
+                    if (charIndex < textoActualObjetivo.length) {
+                        const char = textoActualObjetivo[charIndex];
+                        lineaActualTexto += char;
+                        
+                        if (char === ' ') {
+                            barraEspaciadoraPulsada = true;
+                            teclaPulsada = null;
+                        } else {
+                            teclaPulsada = char.toUpperCase();
+                            barraEspaciadoraPulsada = false;
+                        }
+
+                        charIndex++;
+                    } else {
+                        teclaPulsada = null;
+                        barraEspaciadoraPulsada = false;
+                        estado = 'EXPULSANDOCARRO';
+                        tiempoEstado = ahora;
+                    }
+                }
+            }
+            else if (estado === 'EXPULSANDOCARRO') {
+                // Rotación fluida de la manilla girando hacia adelante al expulsar papel
+                manillaAngulo = Math.sin(tSeg * 8) * 0.5 - 0.8;
+                papelYOffset -= 12;
+
+                if (papelYOffset < -380) {
+                    estado = 'PAUSA_NUEVA_HOJA';
+                    tiempoEstado = ahora;
+                }
+            }
+            else if (estado === 'PAUSA_NUEVA_HOJA') {
+                // Movimiento de retroceso de la manilla al colocar nueva hoja
+                manillaAngulo = Math.sin(tSeg * 6) * 0.3;
+                if (tSeg >= 1.0) {
+                    textoActualObjetivo = CITAS_POSITIVAS[citaIndex % CITAS_POSITIVAS.length];
+                    citaIndex++;
+
+                    charIndex = 0;
+                    lineaActualTexto = "";
+                    papelYOffset = 0;
+                    manillaAngulo = 0;
+
+                    estado = 'ESCRIBIENDO';
+                    tiempoEstado = ahora;
+                }
+            }
+
+            // ==========================================
+            // RENDERIZADO 3D DE LA MÁQUINA DE ESCRIBIR
+            // ==========================================
+
+            // 1. HOJA DE PAPEL
+            ctx.save();
+            ctx.translate(cx, cy - 80 + papelYOffset);
+
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillStyle = '#f5f0e1';
+            ctx.fillRect(-110, -180, 220, 210);
+
+            ctx.fillStyle = '#111111';
+            ctx.font = 'bold 13px "Courier New", monospace';
+            ctx.textAlign = 'left';
+            ctx.shadowBlur = 0;
+
+            const lineasParaImprimir = formatearTextoEnLineas(lineaActualTexto);
+            lineasParaImprimir.forEach((l, idx) => {
+                ctx.fillText(l, -95, -140 + (idx * 22));
+            });
+
+            ctx.restore();
+
+            // 2. RODILLO Y CARRO METÁLICO CON MANILLA DINÁMICA
+            ctx.save();
+            ctx.translate(cx, cy - 75);
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+            ctx.beginPath();
+            ctx.ellipse(0, 25, 150, 15, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#0f1115';
+            ctx.beginPath();
+            ctx.roundRect(-142, -18, 284, 36, 8);
+            ctx.fill();
+
+            const gradRodillo = ctx.createLinearGradient(-135, -20, 135, 20);
+            gradRodillo.addColorStop(0, '#101010');
+            gradRodillo.addColorStop(0.3, '#353a40');
+            gradRodillo.addColorStop(0.5, '#606870');
+            gradRodillo.addColorStop(0.8, '#353a40');
+            gradRodillo.addColorStop(1, '#101010');
+
+            ctx.fillStyle = gradRodillo;
+            ctx.beginPath();
+            ctx.roundRect(-138, -16, 276, 32, 6);
+            ctx.fill();
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+            ctx.fillRect(-135, -14, 270, 3);
+
+            ctx.fillStyle = '#00f0ff';
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#00f0ff';
+            ctx.fillRect(-155, -13, 16, 26);
+
+            // MANILLA DINÁMICA CON ROTACIÓN EN VIVO
+            ctx.save();
+            ctx.translate(138, 0);
+            
+            ctx.fillStyle = '#ff007f';
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#ff007f';
+            ctx.fillRect(0, -13, 16, 26);
+
+            // Aplicar rotación dinámica a la palanca
+            ctx.rotate(manillaAngulo);
+
+            ctx.strokeStyle = '#c0c8d0';
+            ctx.lineWidth = 5;
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = '#ffffff';
+            ctx.beginPath();
+            ctx.moveTo(16, 0);
+            ctx.lineTo(55, -35);
+            ctx.stroke();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(58, -38, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            ctx.restore();
+
+            // 3. CUERPO PRINCIPAL VINTAGE 3D DE LA MÁQUINA
+            ctx.save();
+            ctx.translate(cx, cy + 10);
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+            ctx.beginPath();
+            ctx.ellipse(0, 105, 175, 25, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#080a0e';
+            ctx.beginPath();
+            ctx.moveTo(-150, -40);
+            ctx.lineTo(150, -40);
+            ctx.lineTo(175, 115);
+            ctx.lineTo(-175, 115);
+            ctx.closePath();
+            ctx.fill();
+
+            const gradChasis3D = ctx.createLinearGradient(-150, -50, 150, 100);
+            gradChasis3D.addColorStop(0, '#383d46');
+            gradChasis3D.addColorStop(0.2, '#505862');
+            gradChasis3D.addColorStop(0.5, '#1d2127');
+            gradChasis3D.addColorStop(0.8, '#121519');
+            gradChasis3D.addColorStop(1, '#080a0e');
+
+            ctx.fillStyle = gradChasis3D;
+            ctx.strokeStyle = '#00f0ff';
+            ctx.lineWidth = 2;
+            ctx.shadowBlur = 18;
+            ctx.shadowColor = '#00f0ff';
+
+            ctx.beginPath();
+            ctx.moveTo(-148, -48);
+            ctx.lineTo(148, -48);
+            ctx.lineTo(170, 105);
+            ctx.lineTo(-170, 105);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#101216';
+            ctx.strokeStyle = '#ff007f';
+            ctx.lineWidth = 1.8;
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = '#ff007f';
+            ctx.beginPath();
+            ctx.roundRect(-85, -35, 170, 32, 6);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#ff007f';
+            ctx.font = 'bold 11px "Segoe UI", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText("VINTAGE - MODEL 3D", 0, -15);
+
+            // 4. TECLADO MECÁNICO CON RELIEVE Y VOLUMEN
+            LAYOUT_TECLAS.forEach((fila, fIdx) => {
+                const startX = -((fila.length * 26) / 2) + 13;
+                const yKey = 10 + (fIdx * 27);
+
+                fila.forEach((keyChar, kIdx) => {
+                    const xKey = startX + (kIdx * 26);
+                    const estaPulsada = (teclaPulsada === keyChar);
+
+                    ctx.save();
+                    ctx.translate(xKey, yKey + (estaPulsada ? 4 : 0));
+
+                    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                    ctx.beginPath();
+                    ctx.arc(0, 3, 10.5, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    const gradTecla = ctx.createRadialGradient(-3, -3, 2, 0, 0, 11);
+                    if (estaPulsada) {
+                        gradTecla.addColorStop(0, '#ff70b5');
+                        gradTecla.addColorStop(1, '#ff007f');
+                    } else {
+                        gradTecla.addColorStop(0, '#404650');
+                        gradTecla.addColorStop(0.7, '#1b1e24');
+                        gradTecla.addColorStop(1, '#0d0f12');
+                    }
+
+                    ctx.fillStyle = gradTecla;
+                    ctx.strokeStyle = estaPulsada ? '#ffffff' : '#00f0ff';
+                    ctx.lineWidth = 1.5;
+                    ctx.shadowBlur = estaPulsada ? 15 : 5;
+                    ctx.shadowColor = estaPulsada ? '#ff007f' : '#00f0ff';
+
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 10.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 10px "Segoe UI", sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.shadowBlur = 2;
+                    ctx.shadowColor = '#ffffff';
+                    ctx.fillText(keyChar, 0, 0);
+
+                    ctx.restore();
+                });
+            });
+
+            // 5. BARRA ESPACIADORA 3D INFERIOR
+            ctx.save();
+            ctx.translate(0, 94 + (barraEspaciadoraPulsada ? 4 : 0));
+
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.beginPath();
+            ctx.roundRect(-75, -5, 150, 14, 5);
+            ctx.fill();
+
+            const gradEspacio = ctx.createLinearGradient(0, -8, 0, 8);
+            if (barraEspaciadoraPulsada) {
+                gradEspacio.addColorStop(0, '#ff70b5');
+                gradEspacio.addColorStop(1, '#ff007f');
+            } else {
+                gradEspacio.addColorStop(0, '#404650');
+                gradEspacio.addColorStop(1, '#15181d');
+            }
+
+            ctx.fillStyle = gradEspacio;
+            ctx.strokeStyle = barraEspaciadoraPulsada ? '#ffffff' : '#39ff14';
+            ctx.lineWidth = 1.5;
+            ctx.shadowBlur = barraEspaciadoraPulsada ? 15 : 6;
+            ctx.shadowColor = barraEspaciadoraPulsada ? '#ff007f' : '#39ff14';
+
+            ctx.beginPath();
+            ctx.roundRect(-75, -7, 150, 14, 5);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.restore();
+
+            ctx.restore();
+
+            animacionId = requestAnimationFrame(iniciarAnimacion);
+        }
+    </script>
+</body>
+</html>
